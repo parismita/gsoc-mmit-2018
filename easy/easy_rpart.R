@@ -14,7 +14,21 @@ test$Case<-NULL
 
 #formula->all expt y,time,status
 form <- Class ~ . - Class
-ctrl <- rpart.control(minsplit = 15, minbucket = 5)
+ctrl <- rpart.control(minsplit = 15, minbucket = 5, xval=0)
+tree <- rpart(formula = form, data = train, na.action = na.rpart, control = ctrl, method = "class")
+rpart.plot(tree)
+
+#Model Testing
+out<-predict(tree,test)
+status_predicted<- colnames(out)[max.col(out, ties.method = c("first"))] # predicted
+status_input<- as.character (test$Class) # actuals
+mean (status_input != status_predicted) # misclassification %
+
+
+################################5-fold cross validation###############################################
+
+#xval is cross validation number
+ctrl <- rpart.control(minsplit = 15, minbucket = 5, xval=5)
 tree <- rpart(formula = form, data = train, na.action = na.rpart, control = ctrl, method = "class")
 rpart.plot(tree)
 #summary(tree)
