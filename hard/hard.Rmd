@@ -28,7 +28,7 @@ set.seed(290875)
 Function get_split splits and checks for the best split by maximizing the loglik of survreg model.
 We surf through all possible splits by using 2 nested loops on rows and columns. Split and every point and check if that is the maximum or not.
 
-As this process takes a lot of time, as it has a Time complexity of O(2^n) Hence its known as Slow Regression.
+As this process takes a lot of time, as it has a Time complexity of O(n^2) Hence its known as Slow Regression.
 
 ```{r m2, echo=TRUE}
 ##########################split index##############################################
