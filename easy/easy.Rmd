@@ -1,0 +1,226 @@
+---
+title: " Train and test a decision tree model"
+author: "Parismita Das"
+date: "11 January 2018"
+subtitle: "Easy"
+output: 
+  html_document:
+    toc: true
+    toc_depth: 2
+    toc_float: true
+    theme: cosmo
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+To run train and test a decision tree model using rpart and partykit. And Using 5-fold cross-validation to compare the learned decision tree models to a trivial baseline learner.
+
+## Using rpart
+Importing libraries
+```{r lib, echo=FALSE}
+library(rpart)
+library(rpart.plot)
+library(partykit)
+library(caret)
+```
+
+The dataset using is segmentationData of caret package. The following code seperates test and train data and removes "Case" column from dataset.
+
+```{r data, echo=TRUE}
+data("segmentationData", package = "caret")
+segmentationData$Cell<-NULL
+train<-subset(segmentationData,Case=="Train")
+test<-subset(segmentationData,Case=="Test")
+train$Case<-NULL
+test$Case<-NULL
+```
+
+In the dataset, the target data to pe predicted is "Class" with two classes as "PS" and "WS". The formula required for creating tree using rpart consist of all features expt y,time,status as given below
+
+```{r form, echo=TRUE}
+form <- Class ~ . - Class
+```
+
+
+###The trivial baseline
+
+Creating trivial desicion tree, keeping xval=0 signifies no cross-validation implemented.  
+
+```{r tree1, echo=TRUE}
+ctrl <- rpart.control(minsplit = 15, minbucket = 5, xval=0)
+tree <- rpart(formula = form, data = train, na.action = na.rpart, control = ctrl, method = "class")
+```
+
+The desicion tree formed is:
+
+```{r tree2, echo=FALSE}
+rpart.plot(tree)
+```
+
+Predicting the target class and calculating the missclassification error:
+
+```{r pred,echo=TRUE}
+out<-predict(tree,test)
+status_predicted<- colnames(out)[max.col(out, ties.method = c("first"))] # predicted
+status_input<- as.character (test$Class) # actuals
+mn<- mean (status_input != status_predicted) # misclassification %
+```
+
+Hence the error of misclassification is:
+
+```{r pred2,echo=FALSE}
+print(paste("error: ",toString(mn*100),"%"))
+```
+
+###Desicion tree model using cross validation
+Creating desicion tree, using xval=5 which means 5-fold cross-validation implemented.  
+
+```{r tree3, echo=TRUE}
+ctrl <- rpart.control(minsplit = 15, minbucket = 5, xval=5)
+tree <- rpart(formula = form, data = train, na.action = na.rpart, control = ctrl, method = "class")
+```
+
+The complexity parameter (cp) is used to control the size of the decision tree and to select the optimal tree size. Hence plotting cross validation error vs cp 
+
+```{r tree6, echo=FALSE}
+plotcp(tree)
+printcp(tree)
+```
+
+Pruning the tree using cross validation to prevent overfitting, Thus inappropriate nodes are removed
+
+```{r tree7, echo=TRUE}
+pdtree<- prune(tree, cp=tree$cptable[which.min(tree$cptable[,"xerror"]),"CP"])
+```
+
+```{r plot2,echo=FALSE}
+rpart.plot(pdtree)
+```
+
+The plots of the r-square (apparent and apparent - from cross-validation) versus the number of splits. And the Relative Error(cross-validation) +/- 1-SE from cross-validation versus the number of splits.
+```{r pred5,echo=FALSE}
+par(mfrow=c(1,2))
+rsq.rpart(pdtree)
+par(mfrow=c(1,1))
+```
+
+Predicting the target class and calculating the missclassification error for pruned tree:
+
+```{r pred3,echo=TRUE}
+out<-predict(pdtree,test)
+status_predicted<- colnames(out)[max.col(out, ties.method = c("first"))] # predicted
+status_input<- as.character (test$Class) # actuals
+mn<- mean (status_input != status_predicted) # misclassification %
+```
+
+Hence the error of misclassification is:
+
+```{r pred4,echo=FALSE}
+print(paste("error: ",toString(mn*100),"%"))
+```
+
+Hence the misclassification error decreased on using k-fold cross-validation. 
+
+## Using partykit
+Using conditional trees to train the desicion tree model
+
+```{r ptk1, echo=TRUE}
+ctrl <- ctree_control(teststat = "quad",minsplit = 40, minbucket = 20)
+tree <- ctree(formula = form, data = train, control = ctrl, method = "class")
+```
+
+The desicion tree :
+
+```{r ptk2, echo=FALSE}
+plot(tree)
+```
+
+Predicting target value and calculating the misclassification error:
+
+```{r ptk3, echo=TRUE}
+#Model Testing
+out<-predict(tree,test,type = "prob")
+status_predicted<- colnames(out)[max.col(out, ties.method = c("first"))] # predicted
+status_input<- as.character (test$Class) # actuals
+m <- mean (status_input != status_predicted) # misclassification %
+print(m)
+```
+
+Estimated conditional class probabilities depending on the first split variable. And plotting the same:
+```{r ptk4, echo=TRUE}
+prob <- predict(tree,test, type = "prob")[,1] + runif(nrow(test), min = -0.01, max = 0.01)
+splitvar <- character_split(split_node(node_party(tree)), data = data_party(tree))$name
+plot(test[[splitvar]], prob, pch = as.numeric(test$Class), ylab = "Conditional Class Prob.",xlab = splitvar)
+abline(v = split_node(node_party(tree))$breaks, lty = 2)
+legend(0.15, 0.7, pch = 1:2, legend = levels(test$Class), bty = "n")
+```
+
+## Trtf
+```{r trtf1, echo=FALSE}
+library(trtf)
+library(survival)
+```
+
+Using interval censored data neuroblastomaProcessed of penaltyLearning package. The interval is consisted in target.mat and feature.mat consist of the features to be trained on.
+
+```{r trtf2, echo=TRUE}
+data(neuroblastomaProcessed, package="penaltyLearning")
+```
+
+Considering the datapoints where interval is finite(there is no [-Inf, Inf] intervaled data).
+```{r trtf3, echo=TRUE}
+finite.targets <- with(neuroblastomaProcessed, {
+  data.frame(log.penalty=target.mat[is.finite(target.mat)])
+})
+
+```
+
+Creating ctm object later used to fit using mlt.
+```{r trtf4, echo=TRUE}
+m <- ctm(as.basis(~log.penalty, data=finite.targets), todistr="Normal")
+
+```
+
+Creating survival object, as response variable for model. 
+```{r trtf5, echo=TRUE}
+train.Surv <- with(neuroblastomaProcessed, { Surv(target.mat[, 1], target.mat[,2], type="interval2")})
+
+```
+
+Creating training set, fitting ctm object to mlt and trtf trafotree. 
+```{r trtf9, echo=TRUE}
+train.df <- data.frame(log.penalty=train.Surv, neuroblastomaProcessed$feature.mat)
+mlt.fit <- mlt(m, data=train.df)
+tree.fit <- trafotree(m, formula = log.penalty ~ ., data=train.df, mltargs=list(theta=coef(mlt.fit)))
+
+```
+
+Create tree using partykit
+```{r trtf6, echo=TRUE}
+node_party(tree.fit) # 19-node tree.
+```
+
+Plotting the tree:
+```{r trtf7, echo=FALSE}
+plot(tree.fit)
+```
+
+Predicting the response and calculating the error of miscalculation.
+Here, the error is defined as the average value of predicted data that doesnt fall into the interval of target.mat
+```{r trtf8, echo=TRUE}
+##prediction
+pred.vec <- predict(tree.fit)
+pred.log.penalty <- tree.fit$coef[names(pred.vec), "(Intercept)"]
+is.lo <- pred.log.penalty < neuroblastomaProcessed$target.mat[, 1]
+is.hi <- neuroblastomaProcessed$target.mat[, 2] < pred.log.penalty
+is.error <- is.lo | is.hi
+mn<- mean(is.error)
+```
+
+The error is :
+```{r trtf, echo=FALSE}
+print (mn)
+```
